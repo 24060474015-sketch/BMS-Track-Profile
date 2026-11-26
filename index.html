@@ -409,6 +409,7 @@ function ic(n,s=16,c=''){return `<svg class="ic ${c}" width="${s}" height="${s}"
 //# sourceMappingURL=pdf-lib.min.js.map
 
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const KEY='bms_performance_v2';
 const core=[
@@ -429,9 +430,9 @@ const extra=[
 {name:'30–15 Intermittent Fitness Test',unit:'km/h',component:'Kebugaran intermiten',direction:'higher',protocol:'Lari interval 30 detik dan pemulihan 15 detik.',art:'run'},
 {name:'Yo-Yo Intermittent Recovery Test Level 1',unit:'m',component:'Daya tahan intermiten',direction:'higher',protocol:'Lari bolak-balik 20 m dengan pemulihan aktif.',art:'run'},
 {name:'Seated Medicine Ball Throw',unit:'m',component:'Daya ledak tubuh atas',direction:'higher',protocol:'Lempar medicine ball dari posisi duduk terstandar.',art:'throw'}];
-let db=load(),selectedItems=new Set(),currentSession=null,bulk={type:null,ids:new Set()},pressTimer=null,longPressed=false;
+let db={athletes:[],tests:[],races:[],custom:[],sessions:[]},selectedItems=new Set(),currentSession=null,bulk={type:null,ids:new Set()},pressTimer=null,longPressed=false;
 function load(){try{let raw=localStorage.getItem(KEY)||localStorage.getItem('bms_performance_v1');let d=raw?JSON.parse(raw):null;if(d)return {...{athletes:[],tests:[],races:[],custom:[],sessions:[]},...d}}catch(e){}return {athletes:[],tests:[],races:[],custom:[],sessions:[]}}
-function save(){localStorage.setItem(KEY,JSON.stringify(db));refresh()}
+function save(){localStorage.setItem(KEY,JSON.stringify(db));refresh();if(window.BMSCloud&&window.BMSCloud.ready)window.BMSCloud.scheduleSave()}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function age(d){if(!d)return '';let b=new Date(d+'T00:00:00'),n=new Date();let a=n.getFullYear()-b.getFullYear();if(n.getMonth()<b.getMonth()||(n.getMonth()===b.getMonth()&&n.getDate()<b.getDate()))a--;return a}
@@ -993,4 +994,121 @@ new MutationObserver(()=>{if(busy)return;const v=parseFloat(el.textContent);if(i
 window.closeModalA=function(){const m=document.getElementById('mdl');if(!m||m.classList.contains('closing'))return;if(RM()){m.remove();return}m.classList.add('closing');setTimeout(()=>{if(m.classList.contains('closing'))m.remove()},210)};
 })();
 </script>
+
+<script>
+/* BMS Track Profile System — Supabase cloud layer */
+(function(){
+  const SUPABASE_URL = 'https://pqohnyxoztoopmxbduvv.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_1sYKaR3PJpmAoHzzcvsTcg_vlgroXGD';
+  const WORKSPACE_ID = '11111111-1111-1111-1111-111111111111';
+  const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  let currentUser = null, currentRole = null, cloudVersion = 1;
+  let saveTimer = null, saving = false, pending = false, channel = null, ready = false;
+  const emptyData = () => ({athletes:[],tests:[],races:[],custom:[],sessions:[]});
+  const normalize = d => ({...emptyData(), ...(d && typeof d === 'object' ? d : {})});
+  const el = (tag, attrs={}, html='') => { const n=document.createElement(tag); Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v)); n.innerHTML=html; return n; };
+
+  const css = el('style');
+  css.textContent = `#bms-cloud-gate{position:fixed;inset:0;z-index:2147483000;background:rgba(10,16,25,.96);display:flex;align-items:center;justify-content:center;padding:20px;font-family:inherit;color:#f7f8fa}#bms-cloud-card{width:min(440px,100%);background:#17202b;border:1px solid #3b4654;border-radius:18px;padding:28px;box-shadow:0 24px 80px #0008}#bms-cloud-card h2{margin:0 0 8px;font-size:23px}#bms-cloud-card p{color:#b8c1cc;line-height:1.5;font-size:14px}#bms-cloud-card label{display:block;margin:14px 0 6px;font-size:13px;color:#d7dde5}#bms-cloud-card input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #536173;border-radius:9px;background:#0e1620;color:#fff;font:inherit}#bms-cloud-card button{border:0;border-radius:9px;padding:12px 16px;background:#2c9b70;color:white;font-weight:700;cursor:pointer;width:100%;margin-top:18px}#bms-cloud-status{font-size:13px;min-height:20px;margin-top:12px;color:#f6c979}#bms-cloud-meta{font-size:12px;color:#aab5c2;margin-top:12px}#bms-cloud-logout{position:fixed;right:14px;top:14px;z-index:1000000;background:#263746;color:#fff;border:1px solid #607080;border-radius:9px;padding:8px 12px;cursor:pointer}#bms-cloud-role{position:fixed;right:14px;top:58px;z-index:1000000;background:#e5f5ee;color:#155c40;border-radius:20px;padding:5px 10px;font:600 11px sans-serif}`;
+  document.head.appendChild(css);
+  const gate = el('div',{id:'bms-cloud-gate'},`<div id="bms-cloud-card"><h2>BMS Track Profile System</h2><p>Masuk untuk mengakses data BMS yang tersimpan secara online.</p><form id="bms-cloud-login"><label for="bms-cloud-email">Email</label><input id="bms-cloud-email" type="email" autocomplete="username" required><label for="bms-cloud-password">Password</label><input id="bms-cloud-password" type="password" autocomplete="current-password" required><button type="submit" id="bms-cloud-submit">Masuk</button></form><div id="bms-cloud-status">Menghubungkan ke Supabase…</div><div id="bms-cloud-meta">Akun dibuat melalui Supabase Authentication. Hubungi admin untuk memperoleh akses.</div></div>`);
+  document.body.appendChild(gate);
+  const status = msg => { const n=document.getElementById('bms-cloud-status'); if(n)n.textContent=msg; };
+  const showGate = msg => { gate.style.display='flex'; status(msg||'Silakan login.'); };
+  const hideGate = () => { gate.style.display='none'; };
+  const localData = () => { try { const raw=localStorage.getItem('bms_performance_v2')||localStorage.getItem('bms_performance_v1'); return raw?normalize(JSON.parse(raw)):null; } catch(e){return null;} };
+  const hasRecords = d => d && ['athletes','tests','races','custom','sessions'].some(k=>Array.isArray(d[k])&&d[k].length);
+  const isEditor = () => currentRole==='admin'||currentRole==='editor';
+  function applyRoleUI(){
+    document.querySelectorAll('button,input,select,textarea').forEach(n=>{
+      if(n.closest('#bms-cloud-gate')||n.id==='bms-cloud-logout'||n.closest('#nav'))return;
+      if(!isEditor()) { n.disabled=true; n.setAttribute('data-bms-readonly','1'); }
+      else if(n.getAttribute('data-bms-readonly')==='1'){n.disabled=false;n.removeAttribute('data-bms-readonly');}
+    });
+    let role=document.getElementById('bms-cloud-role'); if(!role){role=el('div',{id:'bms-cloud-role'});document.body.appendChild(role);} role.textContent='Akses: '+(currentRole||'viewer').toUpperCase();
+  }
+  // Controls created later by the app are also made read-only for Viewer accounts.
+  const roleObserver=new MutationObserver(()=>{if(ready&&!isEditor())applyRoleUI();});
+  roleObserver.observe(document.body,{childList:true,subtree:true});
+  async function loadCloud(){
+    const {data,error}=await client.from('bms_workspace_data').select('data,version,updated_by').eq('id',WORKSPACE_ID).single();
+    if(error) throw error;
+    cloudVersion=Number(data.version)||1;
+    db=normalize(data.data);
+    return data;
+  }
+  async function saveCloud(){
+    if(!ready||!pending||saving)return;
+    if(!isEditor()){pending=false;return;}
+    saving=true; pending=false;
+    try{
+      const {data,error}=await client.from('bms_workspace_data').update({data:db,version:cloudVersion+1,updated_at:new Date().toISOString(),updated_by:currentUser.id}).eq('id',WORKSPACE_ID).eq('version',cloudVersion).select('version').maybeSingle();
+      if(error) throw error;
+      if(!data){
+        pending=false;
+        localStorage.setItem('bms_conflict_backup',JSON.stringify(db));
+        status('Konflik: data cloud berubah dari pengguna lain. Salinan lokal disimpan sebagai backup. Muat ulang sebelum mengedit lagi.');
+        alert('Data BMS berubah dari pengguna lain. Perubahan lokal disimpan di backup browser, tetapi belum dikirim ke cloud. Silakan muat ulang halaman dan periksa perubahan terbaru.');
+        return;
+      }
+      cloudVersion=data.version;
+      localStorage.setItem('bms_performance_v2',JSON.stringify(db));
+      status('Tersimpan dan tersinkronisasi.');
+    }catch(e){
+      pending=true;
+      localStorage.setItem('bms_cloud_unsynced_backup',JSON.stringify(db));
+      status('Gagal menyimpan ke cloud: '+(e.message||'periksa koneksi dan izin database'));
+      console.error('BMS cloud save error',e);
+    }finally{saving=false;if(pending&&ready&&isEditor())setTimeout(saveCloud,1200);}
+  }
+  function scheduleSave(){ if(!ready||!isEditor())return; pending=true; clearTimeout(saveTimer); saveTimer=setTimeout(saveCloud,650); status('Menyimpan perubahan…'); }
+  function subscribe(){
+    if(channel)client.removeChannel(channel);
+    channel=client.channel('bms-workspace-live').on('postgres_changes',{event:'UPDATE',schema:'public',table:'bms_workspace_data',filter:'id=eq.'+WORKSPACE_ID},async payload=>{
+      if(payload.new.updated_by===currentUser?.id)return;
+      if(pending||saving){status('Pengguna lain mengubah data. Simpanan lokal belum dikirim; muat ulang untuk mengambil versi terbaru.');return;}
+      try{await loadCloud(); if(typeof refresh==='function')refresh(); status('Data terbaru dari pengguna lain telah disinkronkan.');}
+      catch(e){console.error('BMS realtime reload error',e);}
+    }).subscribe();
+  }
+  async function enter(session){
+    currentUser=session.user;
+    const {data:profile,error:pErr}=await client.from('profiles').select('role,email').eq('id',currentUser.id).single();
+    if(pErr||!profile){currentUser=null;showGate('Profil pengguna tidak ditemukan. Pastikan trigger profiles berhasil dibuat.');return;}
+    currentRole=profile.role||'viewer';
+    try{
+      const row=await loadCloud();
+      const local=localData();
+      if(!hasRecords(row.data)&&currentRole==='admin'&&hasRecords(local)){
+        if(confirm('Ditemukan data BMS lama di browser ini. Pindahkan data lokal tersebut ke database cloud sekarang? Pastikan ini perangkat sumber data yang benar.')){
+          db=local; pending=true; await saveCloud();
+        }
+      }
+      ready=true;
+      if(typeof refresh==='function')refresh();
+      hideGate();
+      let out=document.getElementById('bms-cloud-logout'); if(!out){out=el('button',{id:'bms-cloud-logout'},'Keluar');document.body.appendChild(out);out.addEventListener('click',async()=>{await client.auth.signOut();location.reload();});}
+      applyRoleUI(); subscribe();
+      status('Terhubung sebagai '+profile.email+' ('+currentRole+').');
+    }catch(e){currentUser=null;showGate('Gagal memuat data cloud: '+(e.message||'periksa tabel, ID workspace, dan RLS'));console.error(e);}
+  }
+  document.getElementById('bms-cloud-login').addEventListener('submit',async e=>{
+    e.preventDefault(); const btn=document.getElementById('bms-cloud-submit'); btn.disabled=true; status('Memeriksa akun…');
+    const email=document.getElementById('bms-cloud-email').value.trim(),password=document.getElementById('bms-cloud-password').value;
+    const {data,error}=await client.auth.signInWithPassword({email,password}); btn.disabled=false;
+    if(error){status('Login gagal: '+error.message);return;}
+    try{await enter(data.session);}catch(err){status('Terjadi kesalahan: '+err.message);}
+  });
+  window.BMSCloud={client,get ready(){return ready;},get role(){return currentRole;},scheduleSave,logout:async()=>{await client.auth.signOut();location.reload();}};
+  // Auth state listener handles returning sessions and sign-out in other tabs.
+  client.auth.onAuthStateChange((event,session)=>{
+    if(event==='SIGNED_OUT'){ready=false;currentUser=null;currentRole=null;showGate('Sesi berakhir. Silakan login kembali.');}
+  });
+  (async()=>{
+    try{status('Memeriksa sesi login…');const {data,error}=await client.auth.getSession();if(error)throw error;if(data.session)await enter(data.session);else showGate('Silakan login menggunakan akun BMS.');}
+    catch(e){showGate('Tidak dapat menghubungi Supabase: '+e.message);console.error(e);}
+  })();
+})();
+</script>
+
 </body></html>
